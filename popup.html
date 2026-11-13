@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mentari Quiz Pilot</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="panel">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">MENTARI / CONTROL</p>
+          <h1>Quiz Pilot</h1>
+        </div>
+        <span class="version">0.2</span>
+      </header>
+
+      <p class="intro">Scrape status tugas per matkul atau jalankan bantuan quiz dari halaman Mentari yang sedang terbuka.</p>
+
+      <div class="model-lock"><span class="model-dot"></span><span>Model terkunci: <strong>DeepSeek V4.1 Flash</strong></span></div>
+
+      <label class="field-label" for="apiKey">DeepSeek API key</label>
+      <input id="apiKey" class="text-input" type="password" autocomplete="off" placeholder="sk-…">
+      <p class="hint">Disimpan lokal di Chrome. Hanya dipakai saat menjalankan mode quiz.</p>
+
+      <div class="rule"></div>
+
+      <div class="mode-row">
+        <div>
+          <strong>Aturan PKKMB</strong>
+          <span>ON = konteks PKKMB UNPAM · OFF = mode umum/PKN</span>
+        </div>
+        <label class="switch" for="pkkmbRules">
+          <input id="pkkmbRules" type="checkbox" aria-label="Aturan PKKMB ON atau OFF">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <strong>Jeda setelah menjawab</strong>
+          <span>Tunggu sebelum pindah ke soal berikutnya</span>
+        </div>
+        <label class="delay-control">
+          <input id="delaySeconds" type="number" min="1" max="30" step="1" value="3">
+          <span>detik</span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <strong>Batas pertemuan</strong>
+          <span>Scrape dari pertemuan 1 sampai nomor ini</span>
+        </div>
+        <label class="delay-control" for="maxMeeting">
+          <input id="maxMeeting" type="number" min="1" max="60" step="1" value="21" aria-label="Batas pertemuan untuk scrape">
+          <span>pertemuan</span>
+        </label>
+      </div>
+
+      <label class="check-row" for="autoFinish">
+        <input id="autoFinish" type="checkbox">
+        <span>
+          <strong>Kirim soal terakhir otomatis</strong>
+          <small>Jika aktif, klik “Selesai Quiz” lalu konfirmasi “Ya”.</small>
+        </span>
+      </label>
+
+      <label class="check-row" for="stopLowConfidence">
+        <input id="stopLowConfidence" type="checkbox">
+        <span>
+          <strong>Berhenti jika confidence di bawah 65%</strong>
+          <small>Mati = tetap pilih opsi terbaik dan tampilkan confidence di notifikasi.</small>
+        </span>
+      </label>
+
+      <div id="status" class="status" data-tone="neutral">Siap. Buka halaman kuis Mentari.</div>
+
+      <div class="actions">
+        <button id="start" class="button button-primary" type="button">Mulai quiz</button>
+        <button id="pending" class="button button-primary" type="button">Kerjakan Pretest/Posttest</button>
+        <button id="scrape" class="button button-secondary" type="button">Scrape tugas</button>
+        <button id="stop" class="button button-secondary" type="button">Stop</button>
+      </div>
+
+      <section id="scrapeResults" class="results" aria-live="polite" hidden>
+        <div class="results-heading">
+          <div>
+            <p class="eyebrow">HASIL SCAN</p>
+            <h2>Belum dikerjakan</h2>
+          </div>
+          <span id="resultCount" class="result-count">0</span>
+        </div>
+        <p id="resultMeta" class="result-meta"></p>
+        <div id="resultList" class="result-list"></div>
+      </section>
+
+      <p class="footer-note">Scrape hanya membaca status aktivitas. Jangan bagikan API key DeepSeek.</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

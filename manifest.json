@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Mentari Quiz Pilot",
+  "version": "0.3.2",
+  "description": "Membantu menguji alur kuis Mentari dengan bantuan DeepSeek.",
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "host_permissions": ["https://api.deepseek.com/*", "http://*/*", "https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Mentari Quiz Pilot",
+    "default_popup": "popup.html"
+  }
+}
