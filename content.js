@@ -246,48 +246,37 @@ async function scrapeCurrentCourse(runId, maxMeeting, selectedCourseName = "") {
     if (!runner.running || runId !== runner.runId) break;
     const { element, number } = lessons[index];
     setStatus("running", `${courseName}: membaca pertemuan ${number}/${maxMeeting}`);
-    let detail = element.querySelector(":scope > .op-accordion-detail");
-    const summary = element.querySelector(":scope > .op-accordion-summary");
+    const meeting = document.querySelector(`#${CSS.escape(element.id)}`) || element;
+    let detail = meeting.querySelector(":scope > .op-accordion-detail");
+    let summary = meeting.querySelector(":scope > .op-accordion-summary");
     if (!detail) continue;
 
-    const wasOpen = hasMeetingContent(detail);
-    if (!wasOpen) {
-      summary?.click();
-      await waitForPage(runId, () => {
-        const currentDetail = document.querySelector(`#${CSS.escape(element.id)} > .op-accordion-detail`);
-        return currentDetail && hasMeetingContent(currentDetail);
-      }, 8000, false);
-      await wait(200);
-      detail = element.querySelector(":scope > .op-accordion-detail");
+    const wasExpanded = isAccordionExpanded(summary, detail);
+    if (!wasExpanded || !isMeetingReady(detail)) {
+      if (!wasExpanded) summary?.click();
+      detail = await waitForMeetingDetail(runId, element);
+      summary = document.querySelector(`#${CSS.escape(element.id)} > .op-accordion-summary`) || summary;
     }
 
     course.meetings.push({
       number,
-      title: cleanText(element.querySelector(".op-accordion-summary")?.innerText || `Pertemuan ${number}`),
+      title: cleanText(meeting.querySelector(".op-accordion-summary")?.innerText || `Pertemuan ${number}`),
       activities: extractActivities(detail)
     });
 
-    if (hasMeetingContent(detail)) {
+    if (isAccordionExpanded(summary, detail)) {
       summary?.click();
-      await waitForPage(runId, () => {
-        const currentDetail = document.querySelector(`#${CSS.escape(element.id)} > .op-accordion-detail`);
-        return currentDetail && !hasMeetingContent(currentDetail);
-      }, 8000, false);
+      await wait(400);
     }
   }
 
   return course;
 }
 
-function hasMeetingContent(detail) {
-  if (!detail) return false;
-  return detail.children.length > 0 || cleanText(detail.innerText || detail.textContent).length > 0;
-}
-
 function extractActivities(detail) {
   const kinds = ACTIVITY_KINDS;
 
-  const activityCards = [...detail.querySelectorAll('.MuiPaper-root[id^="PERTEMUAN_"]')];
+  const activityCards = getMeetingCards(detail);
   const cardActivities = activityCards.flatMap((card) => {
     const headings = [...card.querySelectorAll("h1,h2,h3,h4,h5,h6,p")]
       .map((element) => cleanText(element.innerText || element.textContent));
@@ -734,18 +723,69 @@ async function openCourse(runId, name) {
 }
 
 async function ensureMeetingOpen(runId, element) {
-  let detail = element.querySelector(":scope > .op-accordion-detail");
-  if (detail && hasMeetingContent(detail)) return detail;
+  const meeting = document.querySelector(`#${CSS.escape(element.id)}`) || element;
+  const detail = meeting.querySelector(":scope > .op-accordion-detail");
+  const summary = meeting.querySelector(":scope > .op-accordion-summary");
+  if (!detail || !summary) return detail;
+  if (isAccordionExpanded(summary, detail) && isMeetingReady(detail)) return detail;
 
-  const summary = element.querySelector(":scope > .op-accordion-summary");
-  summary?.click();
-  await waitForPage(runId, () => {
-    const current = document.querySelector(`#${CSS.escape(element.id)} > .op-accordion-detail`);
-    return current && hasMeetingContent(current);
-  }, 8000, false);
-  await wait(200);
-  detail = element.querySelector(":scope > .op-accordion-detail");
+  if (!isAccordionExpanded(summary, detail)) summary.click();
+  return waitForMeetingDetail(runId, element);
+}
+
+function getMeetingCards(detail) {
+  if (!detail) return [];
+  return [...detail.querySelectorAll('.MuiPaper-root[id^="PERTEMUAN_"]')];
+}
+
+function isMeetingLoading(detail) {
+  if (!detail) return true;
+  if (detail.getAttribute("aria-busy") === "true") return true;
+  if (detail.querySelector(
+    '[aria-busy="true"], .MuiSkeleton-root'
+  )) return true;
+
+  const text = cleanText(detail.innerText || detail.textContent).toLowerCase();
+  return text.length > 0 && text.length < 40 &&
+    /^(memuat|loading|mohon tunggu|harap tunggu|sedang memuat)\b/.test(text);
+}
+
+function isMeetingReady(detail) {
+  if (!detail || isMeetingLoading(detail)) return false;
+  return getMeetingCards(detail).some((card) => cleanText(card.innerText || card.textContent).length > 0);
+}
+
+function isAccordionExpanded(summary, detail) {
+  const aria = summary?.getAttribute("aria-expanded");
+  if (aria === "true") return true;
+  if (aria === "false") return false;
+  if (!detail) return false;
+  return detail.getBoundingClientRect().height > 8;
+}
+
+async function waitForMeetingDetail(runId, element) {
+  await wait(1600);
+
+  let detail = getMeetingDetail(element);
+  if (hasMeetingContent(detail) && !isMeetingLoading(detail)) return detail;
+
+  const deadline = Date.now() + 1500;
+  while (runner.running && runId === runner.runId && Date.now() < deadline) {
+    await wait(300);
+    detail = getMeetingDetail(element);
+    if (hasMeetingContent(detail) && !isMeetingLoading(detail)) return detail;
+  }
+
   return detail;
+}
+
+function getMeetingDetail(element) {
+  return document.querySelector(`#${CSS.escape(element.id)} > .op-accordion-detail`);
+}
+
+function hasMeetingContent(detail) {
+  if (!detail) return false;
+  return getMeetingCards(detail).length > 0 || cleanText(detail.innerText || detail.textContent).length > 0;
 }
 
 async function findNextPendingQuiz(runId, maxMeeting, processed, courseName) {
@@ -753,10 +793,11 @@ async function findNextPendingQuiz(runId, maxMeeting, processed, courseName) {
 
   for (const { element, number } of lessons) {
     if (!runner.running || runId !== runner.runId) return null;
+    setStatus("running", `${courseName}: memeriksa pertemuan ${number}/${maxMeeting}`);
     const detail = await ensureMeetingOpen(runId, element);
     if (!detail) continue;
 
-    const cards = [...detail.querySelectorAll('.MuiPaper-root[id^="PERTEMUAN_"]')];
+    const cards = getMeetingCards(detail);
     const forumPending = hasPendingForum(cards);
     for (const card of cards) {
       const type = detectActivityType(card);
@@ -807,11 +848,22 @@ function isActivityUnavailable(card) {
 
 async function ensureActivityOpen(runId, card) {
   if (findActivityQuizButton(card)) return true;
+
   const toggle = card.querySelector(".MuiAccordionSummary-root, .MuiListItemButton-root, [aria-expanded]");
-  if (toggle) {
-    toggle.click();
-    await wait(600);
+  if (!toggle) return false;
+  if (toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+
+  const deadline = Date.now() + 3000;
+  let retried = false;
+  while (runner.running && runId === runner.runId && Date.now() < deadline) {
+    if (findActivityQuizButton(card)) return true;
+    if (!retried && toggle.getAttribute("aria-expanded") === "false") {
+      toggle.click();
+      retried = true;
+    }
+    await wait(300);
   }
+
   return Boolean(findActivityQuizButton(card));
 }
 
