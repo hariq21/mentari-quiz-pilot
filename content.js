@@ -543,7 +543,16 @@ async function runPendingQuizzes(runId) {
       if (!job.courseNames.length) {
         throw new Error("Daftar matkul tidak ditemukan di halaman dashboard Mentari.");
       }
-      if (job.courseIndex >= job.courseNames.length) break;
+      if (job.courseIndex >= job.courseNames.length) {
+        if (job.blocked && job.done.length !== job.retryStart) {
+          job.blocked = false;
+          job.retryStart = job.done.length;
+          job.courseIndex = 0;
+          await saveJob(job);
+          continue;
+        }
+        break;
+      }
 
       const courseName = job.courseNames[job.courseIndex];
       const courseLabel = courseName || "Matkul aktif";
@@ -557,6 +566,12 @@ async function runPendingQuizzes(runId) {
 
       const target = await findNextPendingQuiz(runId, runner.config.maxMeeting, new Set(job.done), courseName);
       if (!target) {
+        job.courseIndex += 1;
+        await saveJob(job);
+        continue;
+      }
+      if (target.blocked) {
+        job.blocked = true;
         job.courseIndex += 1;
         await saveJob(job);
         continue;
@@ -595,8 +610,15 @@ async function runPendingQuizzes(runId) {
       job.updatedAt = Date.now();
       await saveJob(job);
 
-      setStatus("moving", `${courseLabel}: ${target.type} pekan ${target.number} selesai, balik ke daftar matkul…`);
+      setStatus("moving", `${courseLabel}: ${target.type} pekan ${target.number} selesai, balik ke daftar pertemuan untuk lanjut…`);
       await ensureCourseList(runId, job);
+      job = (await loadJob()) || job;
+      if (!job.active) {
+        runner.running = false;
+        return;
+      }
+      if (!(await openCourse(runId, courseName))) job.courseIndex += 1;
+      await saveJob(job);
     }
 
     job.active = false;
@@ -790,6 +812,7 @@ function hasMeetingContent(detail) {
 
 async function findNextPendingQuiz(runId, maxMeeting, processed, courseName) {
   const lessons = getSortedLessons(maxMeeting);
+  let blocked = false;
 
   for (const { element, number } of lessons) {
     if (!runner.running || runId !== runner.runId) return null;
@@ -802,8 +825,11 @@ async function findNextPendingQuiz(runId, maxMeeting, processed, courseName) {
     for (const card of cards) {
       const type = detectActivityType(card);
       if (type !== "Pretest" && type !== "Posttest") continue;
-      if (type === "Posttest" && forumPending) continue;
       if (isActivityCompleted(card) || isActivityUnavailable(card)) continue;
+      if (type === "Posttest" && forumPending) {
+        blocked = true;
+        continue;
+      }
       if (processed.has(`${courseName}|${number}|${type}`)) continue;
 
       await ensureActivityOpen(runId, card);
@@ -813,7 +839,7 @@ async function findNextPendingQuiz(runId, maxMeeting, processed, courseName) {
     }
   }
 
-  return null;
+  return blocked ? { blocked: true } : null;
 }
 
 function hasPendingForum(cards) {
